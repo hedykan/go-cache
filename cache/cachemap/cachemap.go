@@ -3,6 +3,9 @@ package cachemap
 import (
 	"sync"
 	"time"
+
+	"github.com/hedykan/go-cache/save/list"
+	"github.com/hedykan/go-cache/types"
 )
 
 type IBuffKey interface {
@@ -15,9 +18,10 @@ type IBuffKey interface {
 - m: 缓存表，用以存储值
 - mu: 表插入锁，用以保证表插入的线程安全性
 */
-type CacheMap[keyT IBuffKey, T any] struct {
-	m  map[keyT]CacheMapNode[T]
-	mu *sync.Mutex
+type CacheMap[keyT IBuffKey, T types.Saver] struct {
+	m        map[keyT]CacheMapNode[T]
+	saveList *list.SaveList[T]
+	mu       *sync.Mutex
 }
 
 /*
@@ -26,16 +30,18 @@ type CacheMap[keyT IBuffKey, T any] struct {
 - val: 具体值的内容
 - reset: 重置函数，每次访问之后会自动调用用以续期
 */
-type CacheMapNode[T any] struct {
+type CacheMapNode[T types.Saver] struct {
 	val   T
 	reset func()
 }
 
 // 新建缓存表
-func NewCacheMap[keyT IBuffKey, T any]() *CacheMap[keyT, T] {
+func NewCacheMap[keyT IBuffKey, T types.Saver]() *CacheMap[keyT, T] {
+	saveList := list.NewSaveList[T]()
 	bm := &CacheMap[keyT, T]{
-		m:  make(map[keyT]CacheMapNode[T]),
-		mu: &sync.Mutex{},
+		m:        make(map[keyT]CacheMapNode[T]),
+		saveList: saveList,
+		mu:       &sync.Mutex{},
 	}
 	return bm
 }
@@ -69,6 +75,9 @@ func (b CacheMap[keyT, T]) Set(key keyT, val T, seg time.Duration) {
 	b.mu.Lock()
 	b.m[key] = node
 	b.mu.Unlock()
+
+	// 插入数据库更新
+	b.saveList.PushUpdate(node.val)
 
 	go func() {
 		<-t.C

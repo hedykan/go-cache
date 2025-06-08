@@ -1,37 +1,45 @@
 package cachemap
 
 import (
-	"fmt"
+	"log"
+
 	"testing"
 	"time"
 )
 
+type SaveInt int
+
+func (i SaveInt) Save() error {
+	log.Println("save", i)
+	return nil
+}
+
 func TestCacheMap(t *testing.T) {
-	b := NewCacheMap[int, int]()
+	b := NewCacheMap[int, SaveInt]()
 	b.Set(0, 0, 5*time.Second)
 
 	for i := 0; i < 10; i++ {
 		b.Get(0)
-		fmt.Println(b)
+		log.Println(b)
 		time.Sleep(1 * time.Second)
 	}
 	time.Sleep(6 * time.Second)
-	fmt.Println(b)
+	log.Println(b)
 }
 
 func TestBuffSet(t *testing.T) {
-	b := NewCacheMap[int, int]()
+	b := NewCacheMap[int, SaveInt]()
 
 	for i := 0; i < 1000; i++ {
-		go b.Set(1, i, time.Second)
+		go b.Set(1, SaveInt(i), time.Second)
 	}
 	time.Sleep(2 * time.Second)
 }
 
 func BenchmarkAdd(b *testing.B) {
-	buff := NewCacheMap[int, int]()
+	buff := NewCacheMap[int, SaveInt]()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		buff.Set(i, i, time.Second)
+		buff.Set(i, SaveInt(i), time.Second)
 	}
 }
