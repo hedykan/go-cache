@@ -2,6 +2,7 @@ package list
 
 import (
 	"container/list"
+	"log"
 	"sync"
 
 	"github.com/hedykan/go-cache/types"
@@ -19,6 +20,7 @@ type SaveList[T types.Saver] struct {
 	mu         *sync.Mutex
 	retryCount int
 	autoSave   bool
+	saveStatus bool
 }
 
 func NewSaveList[T types.Saver]() *SaveList[T] {
@@ -48,39 +50,24 @@ func (n *SaveList[T]) PushUpdate(val T) {
 
 	// 如果开启了自动保存
 	if n.autoSave {
-		go n.saveFrontNode(0)
+		go n.SaveAllNode()
 	}
-}
-
-// 保存节点内容
-func (n *SaveList[T]) saveFrontNode(retryCount int) {
-	if retryCount > n.retryCount {
-		return
-	}
-
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	// 查询队列头
-	e := n.updateList.Front()
-	if e == nil {
-		return
-	}
-
-	// 开始保存
-	v := e.Value.(types.Saver)
-	err := v.Save()
-	if err != nil {
-		go n.saveFrontNode(retryCount + 1)
-		return
-	}
-
-	// 清除队列头
-	n.updateList.Remove(e)
 }
 
 // 手动保存所有数据
 func (n *SaveList[T]) SaveAllNode() {
+	// 已经在保存了
+	if n.saveStatus {
+		// log.Println("print save status", n.saveStatus)
+		return
+	}
+	// 否则退出的时候进行更新
+	n.saveStatus = true
+	defer func() {
+		n.saveStatus = false
+		// log.Println("print save status", n.saveStatus)
+	}()
+
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -88,14 +75,22 @@ func (n *SaveList[T]) SaveAllNode() {
 	e := n.updateList.Front()
 	for e != nil {
 		if retryCount > n.retryCount {
+			log.Println("retry count max, retry count:", retryCount, "n.retryCount:", n.retryCount)
 			break
 		}
 		v := e.Value.(types.Saver)
+		// log.Println("print save", v)
 		err := v.Save()
 		if err != nil {
+			log.Println("save err:", err.Error(), ", retry count:", retryCount)
 			retryCount += 1
+			continue
 		} else {
 			retryCount = 0
 		}
+
+		// 继续下一条，直到处理完成
+		n.updateList.Remove(e)
+		e = n.updateList.Front()
 	}
 }
